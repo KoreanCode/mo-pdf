@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Orange Factory 문서 블러</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260619-4">
+  </head>
+  <body>
+    <main class="app-shell">
+      <nav class="site-nav" aria-label="문서 블러 도구">
+        <a class="brand-link" href="{{ url_for('index') }}" aria-label="Orange Factory 문서 블러 홈">
+          <img src="{{ url_for('static', filename='simbol_2.png') }}" alt="" class="brand-symbol">
+          <span class="brand-copy">Orange Factory</span>
+        </a>
+        <div class="nav-actions">
+          {% if token %}
+            <form action="{{ url_for('cancel_upload', token=token) }}" method="post">
+              <button class="button button-quiet" type="submit">새 파일 열기</button>
+            </form>
+          {% else %}
+            <a class="factory-button" href="https://orangefactory.dev/" rel="noreferrer" aria-label="orangefactory.dev로 이동">
+              <img src="{{ url_for('static', filename='simbol_2.png') }}" alt="" class="factory-button-mark">
+              <span class="factory-button-copy">
+                <small>공식 사이트</small>
+                <strong>orangefactory.dev</strong>
+              </span>
+            </a>
+          {% endif %}
+        </div>
+      </nav>
+
+      {% if error %}
+        <div class="status-message status-error" role="alert">{{ error }}</div>
+      {% endif %}
+      {% if notice %}
+        <div class="status-message status-notice" role="status">{{ notice }}</div>
+      {% endif %}
+
+      {% if not token %}
+        <section class="landing-workbench" aria-labelledby="page-title">
+          <div class="brand-hero-media" aria-hidden="true">
+            <img src="{{ url_for('static', filename='brand-hero-workbench.png') }}" alt="" class="brand-hero-image">
+          </div>
+          <div class="landing-copy">
+            <h1 id="page-title"><span>가릴 곳만 선택하고</span> <span>바로 저장하세요</span></h1>
+            <p class="brand-lede">계약서, 영수증, 스캔본의 민감한 영역을 드래그로 지정한 뒤 블러 처리된 파일로 내려받아요.</p>
+            <div class="upload-panel" aria-labelledby="upload-title">
+              <div class="panel-heading">
+                <h2 id="upload-title">파일을 열어 영역 선택하기</h2>
+                <p>PDF, PNG, JPG, WEBP를 지원해요.</p>
+              </div>
+              <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" class="upload-form">
+                <label class="file-drop" data-file-drop>
+                  <input type="file" name="file" accept="application/pdf,image/png,image/jpeg,image/webp,.pdf,.png,.jpg,.jpeg,.webp" required data-file-input>
+                  <span class="file-drop-icon" aria-hidden="true">+</span>
+                  <span class="file-drop-main" data-file-label>PDF, PNG, JPG, WEBP를 여기에 놓아요</span>
+                </label>
+                <button class="button button-primary" type="submit" data-upload-submit disabled>파일을 선택해요</button>
+              </form>
+              <ol class="flow-steps" aria-label="처리 흐름">
+                <li>열기</li>
+                <li>선택</li>
+                <li>저장하기</li>
+              </ol>
+            </div>
+          </div>
+        </section>
+      {% else %}
+        <p class="sr-only" id="keyboard-help">블러 커서에서 드래그하면 영역을 추가해요 기본 커서에서는 영역을 선택해요 Ctrl+Z로 되돌리고 Delete로 선택 영역을 지워요</p>
+        <section class="editor-shell" data-editor data-mode="draw">
+          <aside class="tool-panel" aria-labelledby="tools-title">
+            <div class="panel-heading compact">
+              <h1 id="tools-title">{{ "이미지" if media_type == "image" else "PDF" }} 블러 편집</h1>
+              <p class="file-name">{{ filename }}</p>
+            </div>
+
+            <form action="{{ url_for('process_file', token=token) }}" method="post" data-process-form>
+              <input type="hidden" name="regions" data-regions-input>
+
+              <fieldset class="tool-group">
+                <legend>커서</legend>
+                <div class="segmented" role="group" aria-label="커서 모드">
+                  <button type="button" class="segment" data-mode-button="select" aria-pressed="false" title="기본 커서">기본</button>
+                  <button type="button" class="segment is-active" data-mode-button="draw" aria-pressed="true" title="수정 커서">블러</button>
+                </div>
+              </fieldset>
+
+              <fieldset class="tool-group">
+                <legend>강도</legend>
+                <label class="range-field">
+                  <span>블러</span>
+                  <input type="range" name="blur_radius" min="1" max="40" value="{{ default_blur_radius }}" data-blur-range>
+                  <strong data-blur-value>{{ default_blur_radius }}</strong>
+                </label>
+              </fieldset>
+
+              <fieldset class="tool-group">
+                <legend>보기</legend>
+                <div class="zoom-row">
+                  <button type="button" class="icon-button" data-zoom-out title="축소" aria-label="축소">-</button>
+                  <input type="range" min="75" max="220" step="5" value="100" data-zoom-range aria-label="확대율">
+                  <button type="button" class="icon-button" data-zoom-in title="확대" aria-label="확대">+</button>
+                  <output data-zoom-value>100%</output>
+                </div>
+              </fieldset>
+
+              <div class="tool-row">
+                <button type="button" class="button button-secondary" data-undo disabled>되돌리기</button>
+                <button type="button" class="button button-secondary" data-clear disabled>전체 삭제</button>
+              </div>
+
+              <div class="region-count" role="status" aria-live="polite">
+                <strong data-region-count>0</strong>개 영역 선택됨
+              </div>
+
+              <button class="button button-primary" type="submit" data-submit disabled>
+                {{ "이미지 저장하기" if media_type == "image" else "PDF 저장하기" }}
+              </button>
+            </form>
+          </aside>
+
+          <section class="document-workspace" aria-label="문서 미리보기">
+            <header class="workspace-header">
+              <button type="button" class="help-button" data-help-open aria-label="사용 방법 보기">❔</button>
+            </header>
+            <div class="pages" data-pages>
+              {% for page in previews %}
+                <article class="page-card">
+                  <header>{{ page.label }}</header>
+                  <div class="page-frame" style="--page-ratio: {{ page.width }} / {{ page.height }};">
+                    <div
+                      class="page-canvas"
+                      data-page="{{ page.page }}"
+                      data-width="{{ page.width }}"
+                      data-height="{{ page.height }}"
+                      role="application"
+                      aria-label="{{ page.label }} 영역 선택"
+                      aria-describedby="keyboard-help"
+                      tabindex="0"
+                    >
+                      <img src="{{ page.image_data }}" alt="{{ page.label }} 미리보기" draggable="false">
+                      <div class="region-layer" aria-hidden="true"></div>
+                    </div>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          </section>
+
+          <div class="help-modal" data-help-modal hidden role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+            <button type="button" class="help-modal-backdrop" data-help-close aria-label="사용 방법 닫기"></button>
+            <section class="help-modal-panel">
+              <header>
+                <h2 id="help-modal-title">사용 방법</h2>
+                <button type="button" class="help-modal-close" data-help-close aria-label="닫기">×</button>
+              </header>
+              <div class="help-guide">
+                <section>
+                  <h3>작업 흐름</h3>
+                  <ol>
+                    <li>블러 커서로 가릴 부분을 드래그해요</li>
+                    <li>기본 커서에서 영역을 클릭해 선택해요</li>
+                    <li>선택한 영역은 Delete 또는 Backspace로 지워요</li>
+                    <li>확대해서 확인하고 저장해요</li>
+                  </ol>
+                </section>
+                <section>
+                  <h3>커맨드</h3>
+                  <dl>
+                    <div>
+                      <dt>Ctrl + Z</dt>
+                      <dd>마지막 작업을 되돌려요</dd>
+                    </div>
+                    <div>
+                      <dt>Delete / Backspace</dt>
+                      <dd>선택한 영역을 지워요</dd>
+                    </div>
+                    <div>
+                      <dt>Enter / Space</dt>
+                      <dd>현재 페이지에 기본 영역을 추가해요</dd>
+                    </div>
+                    <div>
+                      <dt>방향키</dt>
+                      <dd>선택한 영역을 이동해요</dd>
+                    </div>
+                    <div>
+                      <dt>Shift + 방향키</dt>
+                      <dd>선택한 영역의 크기를 조절해요</dd>
+                    </div>
+                    <div>
+                      <dt>Alt + 방향키</dt>
+                      <dd>더 작게 이동해요</dd>
+                    </div>
+                    <div>
+                      <dt>Esc</dt>
+                      <dd>사용 방법 창을 닫아요</dd>
+                    </div>
+                  </dl>
+                </section>
+              </div>
+            </section>
+          </div>
+        </section>
+      {% endif %}
+    </main>
+
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260619-1"></script>
+  </body>
+</html>
