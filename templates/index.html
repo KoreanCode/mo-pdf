@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Orange Factory 문서 블러</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260619-4">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=20260619-6">
   </head>
   <body>
     <main class="app-shell">
@@ -68,7 +68,7 @@
         </section>
       {% else %}
         <p class="sr-only" id="keyboard-help">블러 커서에서 드래그하면 영역을 추가해요 기본 커서에서는 영역을 선택해요 Ctrl+Z로 되돌리고 Delete로 선택 영역을 지워요</p>
-        <section class="editor-shell" data-editor data-mode="draw">
+        <section class="editor-shell" data-editor data-mode="draw" data-view-mode="scroll">
           <aside class="tool-panel" aria-labelledby="tools-title">
             <div class="panel-heading compact">
               <h1 id="tools-title">{{ "이미지" if media_type == "image" else "PDF" }} 블러 편집</h1>
@@ -122,11 +122,22 @@
 
           <section class="document-workspace" aria-label="문서 미리보기">
             <header class="workspace-header">
+              <div class="workspace-view-controls" aria-label="문서 보기 방식">
+                <div class="view-toggle" role="group" aria-label="문서 보기 방식">
+                  <button type="button" class="view-button is-active" data-view-mode-button="scroll" aria-pressed="true">스크롤</button>
+                  <button type="button" class="view-button" data-view-mode-button="page" aria-pressed="false">페이지</button>
+                </div>
+                <div class="pager-controls" data-pager-controls hidden>
+                  <button type="button" class="pager-button" data-page-prev aria-label="이전 페이지">‹</button>
+                  <output class="page-status" data-page-status>1 / {{ previews|length }}</output>
+                  <button type="button" class="pager-button" data-page-next aria-label="다음 페이지">›</button>
+                </div>
+              </div>
               <button type="button" class="help-button" data-help-open aria-label="사용 방법 보기">❔</button>
             </header>
-            <div class="pages" data-pages>
+            <div class="pages" data-pages data-view-mode="scroll">
               {% for page in previews %}
-                <article class="page-card">
+                <article class="page-card" data-page-card>
                   <header>{{ page.label }}</header>
                   <div class="page-frame" style="--page-ratio: {{ page.width }} / {{ page.height }};">
                     <div
@@ -205,6 +216,6 @@
       {% endif %}
     </main>
 
-    <script src="{{ url_for('static', filename='app.js') }}?v=20260619-1"></script>
+    <script src="{{ url_for('static', filename='app.js') }}?v=20260619-2"></script>
   </body>
 </html>

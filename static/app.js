@@ -62,15 +62,24 @@
   const zoomInButton = document.querySelector("[data-zoom-in]");
   const zoomOutButton = document.querySelector("[data-zoom-out]");
   const modeButtons = [...document.querySelectorAll("[data-mode-button]")];
+  const viewModeButtons = [...document.querySelectorAll("[data-view-mode-button]")];
+  const pageCards = [...document.querySelectorAll("[data-page-card]")];
+  const pagerControls = document.querySelector("[data-pager-controls]");
+  const pagePrevButton = document.querySelector("[data-page-prev]");
+  const pageNextButton = document.querySelector("[data-page-next]");
+  const pageStatus = document.querySelector("[data-page-status]");
   const helpModal = document.querySelector("[data-help-modal]");
   const helpOpen = document.querySelector("[data-help-open]");
   const helpCloseButtons = [...document.querySelectorAll("[data-help-close]")];
 
+  const VIEW_MODE_STORAGE_KEY = "pdfBlurViewMode";
   const regions = [];
   const history = [];
   let drawing = null;
   let selectedRegion = null;
   let mode = editor.dataset.mode || "draw";
+  let viewMode = readStoredViewMode() || editor.dataset.viewMode || "scroll";
+  let activePageIndex = 0;
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -270,6 +279,86 @@
     zoomValue.textContent = `${zoom}%`;
   }
 
+  function readStoredViewMode() {
+    try {
+      const storedValue = window.localStorage?.getItem(VIEW_MODE_STORAGE_KEY);
+      return storedValue === "page" || storedValue === "scroll" ? storedValue : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function storeViewMode(nextMode) {
+    try {
+      window.localStorage?.setItem(VIEW_MODE_STORAGE_KEY, nextMode);
+    } catch {
+      // localStorage can be unavailable in restricted browser contexts.
+    }
+  }
+
+  function pageIndexForCanvas(canvas) {
+    const card = canvas?.closest("[data-page-card]");
+    return card ? pageCards.indexOf(card) : -1;
+  }
+
+  function pageIndexForSelection() {
+    return selectedRegion ? pageIndexForCanvas(selectedRegion.canvas) : -1;
+  }
+
+  function updatePageView(shouldResetScroll = false) {
+    const isPageMode = viewMode === "page";
+    editor.dataset.viewMode = viewMode;
+    pages.dataset.viewMode = viewMode;
+
+    pageCards.forEach((card, index) => {
+      const isVisible = !isPageMode || index === activePageIndex;
+      card.hidden = !isVisible;
+      card.classList.toggle("is-active-page", isPageMode && isVisible);
+      card.setAttribute("aria-hidden", String(!isVisible));
+    });
+
+    if (pagerControls) pagerControls.hidden = !isPageMode;
+    if (pageStatus) pageStatus.textContent = `${Math.min(activePageIndex + 1, pageCards.length)} / ${pageCards.length}`;
+    if (pagePrevButton) pagePrevButton.disabled = !isPageMode || activePageIndex <= 0;
+    if (pageNextButton) pageNextButton.disabled = !isPageMode || activePageIndex >= pageCards.length - 1;
+
+    if (isPageMode && selectedRegion && pageIndexForSelection() !== activePageIndex) {
+      selectRegion(null);
+    }
+
+    if (shouldResetScroll) {
+      pages.scrollTo({ left: 0, top: 0, behavior: "auto" });
+    }
+  }
+
+  function setActivePage(index, shouldFocus = false) {
+    if (!pageCards.length) return;
+    activePageIndex = clamp(index, 0, pageCards.length - 1);
+    updatePageView(true);
+
+    if (shouldFocus) {
+      pageCards[activePageIndex]?.querySelector(".page-canvas")?.focus({ preventScroll: true });
+    }
+  }
+
+  function setViewMode(nextMode) {
+    if (nextMode !== "page" && nextMode !== "scroll") return;
+
+    const selectedPageIndex = pageIndexForSelection();
+    if (nextMode === "page" && selectedPageIndex >= 0) {
+      activePageIndex = selectedPageIndex;
+    }
+
+    viewMode = nextMode;
+    storeViewMode(viewMode);
+    viewModeButtons.forEach((button) => {
+      const isActive = button.dataset.viewModeButton === viewMode;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", String(isActive));
+    });
+    updatePageView(nextMode === "page");
+  }
+
   function openHelpModal() {
     if (!helpModal) return;
     helpModal.hidden = false;
@@ -376,12 +465,36 @@
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
       event.preventDefault();
       undo();
+      return;
+    }
+
+    const target = event.target;
+    const isControl = target instanceof Element && target.matches("input, button, textarea, select");
+    if (isControl || viewMode !== "page" || pageCards.length <= 1) {
+      return;
+    }
+
+    if (event.key === "PageUp") {
+      event.preventDefault();
+      setActivePage(activePageIndex - 1, true);
+    }
+
+    if (event.key === "PageDown") {
+      event.preventDefault();
+      setActivePage(activePageIndex + 1, true);
     }
   });
 
   modeButtons.forEach((button) => {
     button.addEventListener("click", () => setMode(button.dataset.modeButton));
   });
+
+  viewModeButtons.forEach((button) => {
+    button.addEventListener("click", () => setViewMode(button.dataset.viewModeButton));
+  });
+
+  pagePrevButton?.addEventListener("click", () => setActivePage(activePageIndex - 1, true));
+  pageNextButton?.addEventListener("click", () => setActivePage(activePageIndex + 1, true));
 
   helpOpen?.addEventListener("click", openHelpModal);
   helpCloseButtons.forEach((button) => {
@@ -411,6 +524,7 @@
   });
 
   setMode(mode);
+  setViewMode(viewMode);
   updateZoom(zoomRange.value);
   updateControls();
 })();

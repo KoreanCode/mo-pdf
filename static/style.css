@@ -26,11 +26,17 @@
 
 html {
   min-width: 320px;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
+  height: 100vh;
+  height: 100dvh;
   min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
   background:
     linear-gradient(90deg, rgba(255, 122, 24, 0.12) 0 1px, transparent 1px 100%),
     linear-gradient(180deg, rgba(255, 122, 24, 0.1) 0 1px, transparent 1px 100%),
@@ -90,13 +96,19 @@ button {
 .app-shell {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
   width: min(1480px, 100%);
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   margin: 0 auto;
   padding: 20px;
+  overflow: hidden;
 }
 
 .site-nav {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -211,6 +223,8 @@ button {
 .factory-button:focus-visible,
 .button:focus-visible,
 .icon-button:focus-visible,
+.view-button:focus-visible,
+.pager-button:focus-visible,
 .segment:focus-visible,
 .file-drop:focus-within,
 input:focus-visible,
@@ -220,6 +234,7 @@ input:focus-visible,
 }
 
 .status-message {
+  flex: 0 0 auto;
   margin-bottom: 16px;
   padding: 14px 16px;
   border: 1px solid var(--line);
@@ -239,8 +254,9 @@ input:focus-visible,
 
 .landing-workbench {
   position: relative;
+  flex: 1 1 auto;
   display: grid;
-  min-height: calc(100vh - 96px);
+  min-height: 0;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -293,7 +309,8 @@ input:focus-visible,
   justify-content: center;
   gap: 18px;
   width: min(640px, 100%);
-  min-height: calc(100vh - 96px);
+  height: 100%;
+  min-height: 0;
   padding: 48px;
   word-break: keep-all;
   overflow-wrap: break-word;
@@ -688,17 +705,20 @@ input:focus-visible,
 }
 
 .editor-shell {
+  flex: 1 1 auto;
   display: grid;
   grid-template-columns: 318px minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tool-panel {
-  position: sticky;
-  top: 16px;
+  position: relative;
+  min-height: 0;
   padding: 18px;
-  overflow: hidden;
+  overflow: auto;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 249, 242, 0.92)),
     url("/static/simbol_2.png") right -62px bottom -82px / 210px auto no-repeat;
@@ -825,21 +845,95 @@ input[type="range"] {
 }
 
 .document-workspace {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
 
 .workspace-header {
   position: relative;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 12px;
   min-height: 58px;
   padding: 0 18px;
   border-bottom: 1px solid var(--line);
 }
 
+.workspace-view-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.view-toggle,
+.pager-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fffaf4;
+}
+
+.pager-controls[hidden],
+.page-card[hidden] {
+  display: none !important;
+}
+
+.view-button,
+.pager-button {
+  display: grid;
+  min-height: 34px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.view-button {
+  padding: 0 12px;
+}
+
+.view-button.is-active {
+  background: var(--orange);
+  color: var(--paper-ink);
+}
+
+.pager-button {
+  width: 34px;
+  background: #ffffff;
+  border-color: var(--line);
+  color: var(--text);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.pager-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.page-status {
+  min-width: 54px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 850;
+  text-align: center;
+}
+
 .help-button {
+  flex: 0 0 auto;
   display: grid;
   width: 40px;
   height: 40px;
@@ -979,10 +1073,12 @@ input[type="range"] {
 
 .pages {
   --zoom: 1;
-  display: grid;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
   gap: 18px;
-  align-items: start;
-  min-height: calc(100vh - 112px);
+  align-items: center;
+  min-height: 0;
   padding: 22px;
   overflow: auto;
   background:
@@ -991,9 +1087,15 @@ input[type="range"] {
     #f4efe8;
 }
 
+.pages[data-view-mode="page"] {
+  gap: 0;
+  justify-content: flex-start;
+  scroll-padding: 22px;
+}
+
 .page-card {
+  flex: 0 0 auto;
   width: min(100%, calc(820px * var(--zoom)));
-  justify-self: center;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1158,6 +1260,22 @@ input[type="range"] {
     align-items: flex-start;
     flex-direction: column;
     padding: 14px;
+  }
+
+  .workspace-view-controls {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .view-toggle,
+  .pager-controls {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .help-button {
+    align-self: flex-end;
   }
 
   .pages {
