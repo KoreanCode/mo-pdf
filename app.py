@@ -26,6 +26,7 @@ from pdf_blur import (
 
 APP_HOST = "127.0.0.1"
 APP_PORT = int(os.environ.get("PORT", "5000"))
+APP_HEALTH_RESPONSE = "orange-pdf-blur"
 MAX_UPLOAD_MB = int(os.environ.get("MAX_UPLOAD_MB", "100"))
 UPLOAD_TTL_SECONDS = int(os.environ.get("UPLOAD_TTL_SECONDS", str(24 * 60 * 60)))
 WORK_ROOT = Path(tempfile.gettempdir()) / "pdf-region-blur"
@@ -126,6 +127,11 @@ def _input_path_for(work_dir: Path) -> Path:
 @app.get("/")
 def index():
     return render_template("index.html")
+
+
+@app.get("/healthz")
+def healthz():
+    return APP_HEALTH_RESPONSE + "\n", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
 @app.post("/upload")

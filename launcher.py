@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import signal
+import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -15,21 +17,45 @@ import tkinter as tk
 
 
 APP_NAME = "O'range PDF Blur"
-APP_URL = "http://127.0.0.1:5000"
+APP_HOST = "127.0.0.1"
+APP_HEALTH_RESPONSE = "orange-pdf-blur"
+DEFAULT_PORT = int(os.environ.get("PORT", "5000"))
 BASE_DIR = Path(__file__).resolve().parent
 VENV_DIR = BASE_DIR / ".venv"
 RUNTIME_DIR = BASE_DIR / "runtime"
 LOG_DIR = BASE_DIR / "logs"
 PID_FILE = RUNTIME_DIR / "server.pid"
+PORT_FILE = RUNTIME_DIR / "server.port"
 LEGACY_PID_FILE = BASE_DIR / "server.pid"
 OUT_LOG = LOG_DIR / "server.out.log"
 ERR_LOG = LOG_DIR / "server.err.log"
+FONT_FAMILY = "Apple SD Gothic Neo" if sys.platform == "darwin" else "Segoe UI"
 
 
 def _venv_python() -> Path:
     if os.name == "nt":
         return VENV_DIR / "Scripts" / "python.exe"
     return VENV_DIR / "bin" / "python"
+
+
+def _app_url(port: int) -> str:
+    return f"http://{APP_HOST}:{port}"
+
+
+def _read_port() -> int:
+    try:
+        raw_port = PORT_FILE.read_text(encoding="ascii").strip()
+        port = int(raw_port)
+    except (OSError, ValueError):
+        return DEFAULT_PORT
+    if 1 <= port <= 65535:
+        return port
+    return DEFAULT_PORT
+
+
+def _write_port(port: int) -> None:
+    RUNTIME_DIR.mkdir(exist_ok=True)
+    PORT_FILE.write_text(str(port), encoding="ascii")
 
 
 def _read_pid() -> int | None:
@@ -50,7 +76,7 @@ def _write_pid(pid: int) -> None:
 
 
 def _clear_pid() -> None:
-    for pid_path in (PID_FILE, LEGACY_PID_FILE):
+    for pid_path in (PID_FILE, LEGACY_PID_FILE, PORT_FILE):
         try:
             pid_path.unlink()
         except FileNotFoundError:
@@ -65,12 +91,43 @@ def _pid_is_alive(pid: int) -> bool:
     return True
 
 
-def _server_is_ready() -> bool:
+def _server_is_ready(port: int) -> bool:
     try:
-        with urllib.request.urlopen(APP_URL, timeout=0.75) as response:
-            return 200 <= response.status < 500
+        with urllib.request.urlopen(f"{_app_url(port)}/healthz", timeout=0.75) as response:
+            if response.status != 200:
+                return False
+            return response.read().decode("utf-8").strip() == APP_HEALTH_RESPONSE
     except (OSError, urllib.error.URLError):
         return False
+
+
+def _find_available_port(start_port: int) -> int:
+    for port in range(start_port, min(start_port + 100, 65536)):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind((APP_HOST, port))
+            except OSError:
+                continue
+            return port
+    raise RuntimeError("사용 가능한 로컬 포트를 찾지 못했습니다.")
+
+
+def _environment_is_usable(python_path: Path) -> bool:
+    if not python_path.exists():
+        return False
+    result = subprocess.run(
+        [
+            str(python_path),
+            "-c",
+            "import flask, fitz; from PIL import Image",
+        ],
+        cwd=BASE_DIR,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def _terminate_pid(pid: int) -> None:
@@ -109,135 +166,166 @@ class LauncherApp:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("430x520")
-        self.root.minsize(430, 520)
-        self.root.configure(bg="#fff7ed")
+        self.root.geometry("500x620")
+        self.root.minsize(500, 620)
+        self.root.configure(bg="#fff7f0")
         self.root.resizable(False, False)
         self.process: subprocess.Popen[bytes] | None = None
         self.logo_image: tk.PhotoImage | None = None
+        self.port = _read_port()
 
         self.status_text = tk.StringVar(value="대기 중")
         self.detail_text = tk.StringVar(value="서버 실행을 누르면 로컬 서버를 준비합니다.")
+        self.url_text = tk.StringVar(value=_app_url(self.port))
 
         self._build_ui()
         self._refresh_status()
 
     def _build_ui(self) -> None:
-        container = tk.Frame(self.root, bg="#fff7ed", padx=24, pady=22)
+        container = tk.Frame(self.root, bg="#fff7f0", padx=34, pady=28)
         container.pack(fill="both", expand=True)
 
-        logo_path = BASE_DIR / "static" / "simbol.png"
+        logo_path = BASE_DIR / "static" / "simbol_2.png"
         if logo_path.exists():
             image = tk.PhotoImage(file=str(logo_path))
-            scale = max(1, max(image.width() // 112, image.height() // 112))
+            scale = max(1, max(image.width() // 74, image.height() // 74))
             self.logo_image = image.subsample(scale, scale)
-            tk.Label(container, image=self.logo_image, bg="#fff7ed").pack(pady=(2, 14))
+            tk.Label(
+                container,
+                image=self.logo_image,
+                bg="#fff7f0",
+                borderwidth=0,
+                highlightthickness=0,
+            ).pack(pady=(0, 18))
+
+        tk.Frame(container, bg="#ff7e12", height=4, width=42).pack(pady=(0, 16))
 
         tk.Label(
             container,
             text=APP_NAME,
-            bg="#fff7ed",
-            fg="#2b2118",
-            font=("Segoe UI", 18, "bold"),
+            bg="#fff7f0",
+            fg="#282625",
+            font=(FONT_FAMILY, 24, "bold"),
+            borderwidth=0,
+            highlightthickness=0,
         ).pack()
 
         tk.Label(
             container,
-            text="PDF 영역 블러 로컬 서버 런처",
-            bg="#fff7ed",
-            fg="#6b5a47",
-            font=("Segoe UI", 10),
-        ).pack(pady=(4, 20))
+            text="PDF 영역 블러 로컬 도구",
+            bg="#fff7f0",
+            fg="#6b6461",
+            font=(FONT_FAMILY, 12),
+            borderwidth=0,
+            highlightthickness=0,
+        ).pack(pady=(6, 28))
 
-        status_panel = tk.Frame(container, bg="#ffffff", padx=18, pady=16, highlightthickness=1, highlightbackground="#f0d8be")
+        status_panel = tk.Frame(container, bg="#fff7f0", padx=0, pady=0, highlightthickness=0, borderwidth=0)
         status_panel.pack(fill="x")
 
         tk.Label(
             status_panel,
             textvariable=self.status_text,
-            bg="#ffffff",
-            fg="#1f1a17",
-            font=("Segoe UI", 13, "bold"),
+            bg="#fff7f0",
+            fg="#282625",
+            font=(FONT_FAMILY, 18, "bold"),
+            borderwidth=0,
+            highlightthickness=0,
         ).pack(anchor="w")
         tk.Label(
             status_panel,
             textvariable=self.detail_text,
-            bg="#ffffff",
-            fg="#6b5a47",
+            bg="#fff7f0",
+            fg="#6b6461",
             justify="left",
-            wraplength=340,
-            font=("Segoe UI", 9),
-        ).pack(anchor="w", pady=(7, 0))
+            wraplength=420,
+            font=(FONT_FAMILY, 11),
+            borderwidth=0,
+            highlightthickness=0,
+        ).pack(anchor="w", pady=(8, 0))
 
-        button_frame = tk.Frame(container, bg="#fff7ed")
-        button_frame.pack(fill="x", pady=22)
+        tk.Frame(container, bg="#ffdfc4", height=1).pack(fill="x", pady=(22, 16))
 
-        self.start_button = tk.Button(
+        url_panel = tk.Frame(container, bg="#fff7f0", padx=0, pady=0, highlightthickness=0, borderwidth=0)
+        url_panel.pack(fill="x")
+
+        tk.Label(
+            url_panel,
+            text="접속 주소",
+            bg="#fff7f0",
+            fg="#893f00",
+            font=(FONT_FAMILY, 10, "bold"),
+            borderwidth=0,
+            highlightthickness=0,
+        ).pack(anchor="w")
+        tk.Label(
+            url_panel,
+            textvariable=self.url_text,
+            bg="#fff7f0",
+            fg="#282625",
+            font=("Menlo", 12, "bold"),
+            borderwidth=0,
+            highlightthickness=0,
+        ).pack(anchor="w", pady=(4, 0))
+
+        button_frame = tk.Frame(container, bg="#fff7f0")
+        button_frame.pack(fill="x", pady=26)
+
+        self.start_button = self._make_action_button(
             button_frame,
             text="서버 실행",
             command=self.start_server,
-            width=14,
-            height=2,
-            bg="#f97316",
-            fg="#ffffff",
-            activebackground="#ea580c",
-            activeforeground="#ffffff",
-            font=("Segoe UI", 10, "bold"),
-            relief="flat",
-            cursor="hand2",
+            bg="#ff7e12",
+            activebg="#ff9843",
         )
-        self.start_button.grid(row=0, column=0, padx=(0, 8), sticky="ew")
+        self.start_button.pack(fill="x", pady=(0, 12))
 
-        self.stop_button = tk.Button(
-            button_frame,
-            text="서버 종료",
-            command=self.stop_server,
-            width=14,
-            height=2,
-            bg="#2f2a24",
-            fg="#ffffff",
-            activebackground="#1f1a17",
-            activeforeground="#ffffff",
-            font=("Segoe UI", 10, "bold"),
-            relief="flat",
-            cursor="hand2",
-        )
-        self.stop_button.grid(row=0, column=1, padx=4, sticky="ew")
-
-        self.open_button = tk.Button(
+        self.open_button = self._make_action_button(
             button_frame,
             text="접속하기",
             command=self.open_app,
-            width=14,
-            height=2,
-            bg="#138a43",
-            fg="#ffffff",
-            activebackground="#0f7037",
-            activeforeground="#ffffff",
-            font=("Segoe UI", 10, "bold"),
-            relief="flat",
-            cursor="hand2",
+            bg="#ffecdc",
+            activebg="#ffdfc4",
         )
-        self.open_button.grid(row=0, column=2, padx=(8, 0), sticky="ew")
+        self.open_button.pack(fill="x", pady=(0, 12))
 
-        for column in range(3):
-            button_frame.columnconfigure(column, weight=1)
-
-        tk.Label(
-            container,
-            text=APP_URL,
-            bg="#fff7ed",
-            fg="#8a4b12",
-            font=("Consolas", 10),
-        ).pack(pady=(2, 0))
+        self.stop_button = self._make_action_button(
+            button_frame,
+            text="서버 종료",
+            command=self.stop_server,
+            bg="#ffffff",
+            activebg="#f5f4f4",
+        )
+        self.stop_button.pack(fill="x")
 
         tk.Label(
             container,
             text="실행 로그는 logs 폴더에 저장됩니다.",
-            bg="#fff7ed",
-            fg="#826f5e",
-            font=("Segoe UI", 9),
+            bg="#fff7f0",
+            fg="#918a87",
+            font=(FONT_FAMILY, 9),
+            borderwidth=0,
+            highlightthickness=0,
         ).pack(side="bottom", pady=(20, 0))
+
+    def _make_action_button(self, parent: tk.Frame, *, text: str, command, bg: str, activebg: str) -> tk.Button:
+        return tk.Button(
+            parent,
+            text=text,
+            command=command,
+            height=2,
+            bg=bg,
+            fg="#282625",
+            activebackground=activebg,
+            activeforeground="#282625",
+            disabledforeground="#918a87",
+            font=(FONT_FAMILY, 14, "bold"),
+            relief="flat",
+            bd=0,
+            highlightthickness=0,
+            borderwidth=0,
+            cursor="hand2",
+        )
 
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
@@ -249,9 +337,17 @@ class LauncherApp:
         self.status_text.set(status)
         self.detail_text.set(detail)
 
+    def _set_port(self, port: int) -> None:
+        self.port = port
+        self.url_text.set(_app_url(port))
+
     def _refresh_status(self) -> None:
         pid = _read_pid()
-        if _server_is_ready():
+        saved_port = _read_port()
+        if saved_port != self.port and _server_is_ready(saved_port):
+            self._set_port(saved_port)
+
+        if _server_is_ready(self.port):
             self._set_status("서버 실행 중", "브라우저에서 접속할 수 있습니다.")
         elif pid and not _pid_is_alive(pid):
             _clear_pid()
@@ -266,6 +362,11 @@ class LauncherApp:
 
     def _ensure_environment(self) -> Path:
         python_path = _venv_python()
+        if python_path.exists() and not _environment_is_usable(python_path):
+            self.root.after(0, self._set_status, "처음 실행 준비 중", "기존 Python 가상환경을 다시 만들고 있습니다.")
+            shutil.rmtree(VENV_DIR, ignore_errors=True)
+            python_path = _venv_python()
+
         if not python_path.exists():
             self.root.after(0, self._set_status, "처음 실행 준비 중", "Python 가상환경을 만들고 있습니다.")
             subprocess.run([sys.executable, "-m", "venv", str(VENV_DIR)], cwd=BASE_DIR, check=True)
@@ -279,6 +380,8 @@ class LauncherApp:
             text=True,
             check=True,
         )
+        if not _environment_is_usable(python_path):
+            raise RuntimeError("Python 패키지 설치 후에도 실행 환경을 확인하지 못했습니다.")
         return python_path
 
     def start_server(self) -> None:
@@ -286,14 +389,16 @@ class LauncherApp:
 
     def _start_server_worker(self) -> None:
         try:
-            if _server_is_ready():
+            if _server_is_ready(self.port):
                 self.root.after(0, self._set_status, "서버 실행 중", "이미 실행 중입니다. 접속하기를 누르세요.")
                 return
 
             python_path = self._ensure_environment()
             LOG_DIR.mkdir(exist_ok=True)
+            port = _find_available_port(DEFAULT_PORT)
+            self.root.after(0, self._set_port, port)
             env = os.environ.copy()
-            env.setdefault("PORT", "5000")
+            env["PORT"] = str(port)
 
             self.root.after(0, self._set_status, "서버 시작 중", "로컬 서버를 실행하고 있습니다.")
             with OUT_LOG.open("a", encoding="utf-8") as out_log, ERR_LOG.open("a", encoding="utf-8") as err_log:
@@ -313,11 +418,12 @@ class LauncherApp:
 
                 self.process = subprocess.Popen([str(python_path), str(BASE_DIR / "app.py")], **kwargs)
             _write_pid(self.process.pid)
+            _write_port(port)
 
             for _ in range(40):
                 if self.process.poll() is not None:
                     raise RuntimeError("서버가 바로 종료되었습니다. logs/server.err.log를 확인하세요.")
-                if _server_is_ready():
+                if _server_is_ready(port):
                     self.root.after(0, self._set_status, "서버 실행 중", "브라우저에서 접속할 수 있습니다.")
                     return
                 time.sleep(0.25)
@@ -355,10 +461,10 @@ class LauncherApp:
             self.root.after(0, self._set_busy, False)
 
     def open_app(self) -> None:
-        if not _server_is_ready():
+        if not _server_is_ready(self.port):
             self._set_status("접속 대기", "서버가 아직 실행 중이 아닙니다. 먼저 서버 실행을 누르세요.")
             return
-        webbrowser.open(APP_URL)
+        webbrowser.open(_app_url(self.port))
 
     def run(self) -> None:
         self.root.mainloop()
