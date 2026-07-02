@@ -20,13 +20,38 @@ APP_NAME = "O'range PDF Blur"
 APP_HOST = "127.0.0.1"
 APP_HEALTH_RESPONSE = "orange-pdf-blur"
 DEFAULT_PORT = int(os.environ.get("PORT", "5000"))
-BASE_DIR = Path(__file__).resolve().parent
+FROZEN = bool(getattr(sys, "frozen", False))
+
+
+def _resource_dir() -> Path:
+    if FROZEN:
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parent
+
+
+BASE_DIR = _resource_dir()
+
+
+def _state_dir() -> Path:
+    if not FROZEN:
+        return BASE_DIR
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "OrangePdfBlur"
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        if local_app_data:
+            return Path(local_app_data) / "OrangePdfBlur"
+        return Path.home() / "AppData" / "Local" / "OrangePdfBlur"
+    return Path.home() / ".orange-pdf-blur"
+
+
+STATE_DIR = _state_dir()
 VENV_DIR = BASE_DIR / ".venv"
-RUNTIME_DIR = BASE_DIR / "runtime"
-LOG_DIR = BASE_DIR / "logs"
+RUNTIME_DIR = STATE_DIR / "runtime"
+LOG_DIR = STATE_DIR / "logs"
 PID_FILE = RUNTIME_DIR / "server.pid"
 PORT_FILE = RUNTIME_DIR / "server.port"
-LEGACY_PID_FILE = BASE_DIR / "server.pid"
+LEGACY_PID_FILE = STATE_DIR / "server.pid"
 OUT_LOG = LOG_DIR / "server.out.log"
 ERR_LOG = LOG_DIR / "server.err.log"
 FONT_FAMILY = "Apple SD Gothic Neo" if sys.platform == "darwin" else "Segoe UI"
@@ -164,6 +189,7 @@ def _terminate_pid(pid: int) -> None:
 
 class LauncherApp:
     def __init__(self) -> None:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
         self.root = tk.Tk()
         self.root.title(APP_NAME)
         self.root.geometry("500x620")
@@ -361,6 +387,9 @@ class LauncherApp:
         thread.start()
 
     def _ensure_environment(self) -> Path:
+        if FROZEN:
+            return Path(sys.executable)
+
         python_path = _venv_python()
         if python_path.exists() and not _environment_is_usable(python_path):
             self.root.after(0, self._set_status, "처음 실행 준비 중", "기존 Python 가상환경을 다시 만들고 있습니다.")
@@ -384,6 +413,13 @@ class LauncherApp:
             raise RuntimeError("Python 패키지 설치 후에도 실행 환경을 확인하지 못했습니다.")
         return python_path
 
+    def _server_command(self) -> list[str]:
+        if FROZEN:
+            return [sys.executable, "--server"]
+
+        python_path = self._ensure_environment()
+        return [str(python_path), str(BASE_DIR / "app.py")]
+
     def start_server(self) -> None:
         self._run_in_thread(self._start_server_worker)
 
@@ -393,7 +429,7 @@ class LauncherApp:
                 self.root.after(0, self._set_status, "서버 실행 중", "이미 실행 중입니다. 접속하기를 누르세요.")
                 return
 
-            python_path = self._ensure_environment()
+            server_command = self._server_command()
             LOG_DIR.mkdir(exist_ok=True)
             port = _find_available_port(DEFAULT_PORT)
             self.root.after(0, self._set_port, port)
@@ -403,7 +439,7 @@ class LauncherApp:
             self.root.after(0, self._set_status, "서버 시작 중", "로컬 서버를 실행하고 있습니다.")
             with OUT_LOG.open("a", encoding="utf-8") as out_log, ERR_LOG.open("a", encoding="utf-8") as err_log:
                 kwargs: dict[str, object] = {
-                    "cwd": BASE_DIR,
+                    "cwd": STATE_DIR if FROZEN else BASE_DIR,
                     "stdout": out_log,
                     "stderr": err_log,
                     "env": env,
@@ -416,7 +452,7 @@ class LauncherApp:
                 else:
                     kwargs["start_new_session"] = True
 
-                self.process = subprocess.Popen([str(python_path), str(BASE_DIR / "app.py")], **kwargs)
+                self.process = subprocess.Popen(server_command, **kwargs)
             _write_pid(self.process.pid)
             _write_port(port)
 
@@ -470,5 +506,32 @@ class LauncherApp:
         self.root.mainloop()
 
 
-if __name__ == "__main__":
+def run_server() -> None:
+    import socket as socket_module
+
+    from app import APP_HOST as SERVER_HOST
+    from app import APP_PORT as SERVER_PORT
+    from app import WORK_ROOT, _cleanup_old_uploads, app
+
+    original_getfqdn = socket_module.getfqdn
+
+    def local_getfqdn(name: str = "") -> str:
+        if name in ("", SERVER_HOST, "127.0.0.1", "localhost"):
+            return "localhost"
+        return original_getfqdn(name)
+
+    socket_module.getfqdn = local_getfqdn
+    WORK_ROOT.mkdir(parents=True, exist_ok=True)
+    _cleanup_old_uploads()
+    app.run(host=SERVER_HOST, port=SERVER_PORT, debug=False)
+
+
+def main() -> None:
+    if "--server" in sys.argv:
+        run_server()
+        return
     LauncherApp().run()
+
+
+if __name__ == "__main__":
+    main()

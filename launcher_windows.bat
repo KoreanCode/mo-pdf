@@ -2,6 +2,11 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
+if exist "OrangePdfBlur.exe" (
+  start "" "%~dp0OrangePdfBlur.exe"
+  exit /b 0
+)
+
 if exist ".venv\Scripts\pythonw.exe" (
   start "" ".venv\Scripts\pythonw.exe" "launcher.py"
   exit /b 0

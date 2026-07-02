@@ -18,6 +18,7 @@ server.pid
 *.log
 flask-server.*.log
 .macos-build/
+.windows-build/
 *.dmg
 *.zip
 .pytest_cache/

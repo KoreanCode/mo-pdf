@@ -14,7 +14,7 @@ python -m compileall app.py pdf_blur.py launcher.py
 node --check static/app.js
 ```
 
-## 3. ZIP 배포본 생성
+## 3. Windows ZIP 배포본 생성
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\package.ps1
@@ -23,29 +23,27 @@ powershell -ExecutionPolicy Bypass -File .\package.ps1
 확인할 결과:
 
 ```text
-dist/pdf-region-blur-app.zip
-dist/pdf-region-blur-app/Windows/start_windows.vbs
-dist/pdf-region-blur-app/Windows/launcher_windows.bat
-dist/pdf-region-blur-app/macOS/start_mac.command
-dist/pdf-region-blur-app/macOS/launcher_mac.command
-dist/pdf-region-blur-app/macOS/build_mac_dmg.command
+dist/O-range-PDF-Blur-Windows.zip
+dist/pdf-region-blur-app-windows/Windows/OrangePdfBlur.exe
+dist/pdf-region-blur-app-windows/Windows/_internal
 ```
 
 ## 4. macOS DMG 생성
 
-Mac에서 ZIP 압축을 푼 뒤 실행합니다.
+Mac에서 실행합니다.
 
 ```bash
-cd macOS
-chmod +x build_mac_dmg.command launcher_mac.command start_mac.command
-./build_mac_dmg.command
+chmod +x build_mac_dmg.command
+zsh build_mac_dmg.command
 ```
 
 생성 결과:
 
 ```text
-O-range-PDF-Blur-macOS.dmg
+dist/O-range-PDF-Blur-macOS.dmg
 ```
+
+서명과 notarization까지 함께 진행할 때는 `APPLE_SIGNING_IDENTITY`, `APPLE_API_KEY`, `APPLE_API_ISSUER`, `APPLE_API_KEY_PATH`를 설정한 뒤 실행합니다.
 
 ## 5. GitHub 업로드
 
